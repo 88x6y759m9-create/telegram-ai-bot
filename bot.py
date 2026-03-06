@@ -1,116 +1,61 @@
 import telebot
-import openai
+import requests
 import os
 from telebot.types import ReplyKeyboardMarkup
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENAI_KEY = os.getenv("OPENAI_KEY")
+TOKEN = os.getenv("BOT_TOKEN")
+AI_KEY = os.getenv("AI_KEY")
 
-bot = telebot.TeleBot(BOT_TOKEN)
-openai.api_key = OPENAI_KEY
+bot = telebot.TeleBot(TOKEN)
 
-users_context = {}
-image_mode = {}
+
+def ask_ai(prompt):
+
+    url = "https://api.together.xyz/v1/chat/completions"
+
+    headers = {
+        "Authorization": f"Bearer {AI_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    data = {
+        "model": "mistralai/Mistral-7B-Instruct-v0.1",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ]
+    }
+
+    r = requests.post(url, headers=headers, json=data)
+
+    return r.json()["choices"][0]["message"]["content"]
 
 
 def menu():
+
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
 
     markup.row("🤖 Задать вопрос")
-    markup.row("🖼 Создать изображение")
-    markup.row("👤 Мой профиль", "💬 Очистить чат")
+    markup.row("👤 Мой профиль")
 
     return markup
 
 
 @bot.message_handler(commands=["start"])
-def start(message):
-
-    users_context[message.chat.id] = []
+def start(msg):
 
     bot.send_message(
-        message.chat.id,
-        "Привет 👋\n\nНапиши вопрос или выбери функцию.",
+        msg.chat.id,
+        "Привет 👋\n\nНапиши вопрос.",
         reply_markup=menu()
     )
 
 
 @bot.message_handler(func=lambda m: True)
-def handler(message):
+def chat(msg):
 
-    chat_id = message.chat.id
-    text = message.text
+    answer = ask_ai(msg.text)
 
-
-    if text == "👤 Мой профиль":
-
-        bot.send_message(
-            chat_id,
-            f"ID: {message.from_user.id}\n"
-            f"Username: @{message.from_user.username}"
-        )
-        return
-
-
-    if text == "💬 Очистить чат":
-
-        users_context[chat_id] = []
-        bot.send_message(chat_id,"Контекст очищен")
-        return
-
-
-    if text == "🖼 Создать изображение":
-
-        image_mode[chat_id] = True
-        bot.send_message(chat_id,"Напишите описание картинки")
-        return
-
-
-    if image_mode.get(chat_id):
-
-        image_mode[chat_id] = False
-
-        response = openai.images.generate(
-            model="gpt-image-1",
-            prompt=text
-        )
-
-        image_url = response.data[0].url
-
-        bot.send_photo(chat_id,image_url)
-
-        return
-
-
-    if chat_id not in users_context:
-        users_context[chat_id] = []
-
-
-    users_context[chat_id].append({
-        "role":"user",
-        "content":text
-    })
-
-
-    response = openai.chat.completions.create(
-
-        model="gpt-4o-mini",
-
-        messages=users_context[chat_id]
-
-    )
-
-
-    answer = response.choices[0].message.content
-
-
-    users_context[chat_id].append({
-        "role":"assistant",
-        "content":answer
-    })
-
-
-    bot.send_message(chat_id,answer)
+    bot.send_message(msg.chat.id,answer)
 
 
 bot.infinity_polling()
