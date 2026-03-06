@@ -1,7 +1,7 @@
 import telebot
 import openai
 import os
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+from telebot.types import ReplyKeyboardMarkup
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_KEY = os.getenv("OPENAI_KEY")
@@ -10,35 +10,33 @@ bot = telebot.TeleBot(BOT_TOKEN)
 openai.api_key = OPENAI_KEY
 
 users_context = {}
+image_mode = {}
 
 
 def menu():
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
 
-    markup.add("👋 Что умеет бот","👤 Мой профиль")
-    markup.add("🚀 Премиум","💬 Удалить контекст")
-    markup.add("🖼 Создать изображение","🎬 Создать видео")
-    markup.add("🎸 Создать песню","🔎 Интернет-поиск")
-    markup.add("📝 Выбрать модель","⚙️ Настройки бота")
-    markup.add("🎱 Основные команды","📄 Соглашение")
+    markup.row("🤖 Задать вопрос")
+    markup.row("🖼 Создать изображение")
+    markup.row("👤 Мой профиль", "💬 Очистить чат")
 
     return markup
 
 
-@bot.message_handler(commands=['start'])
+@bot.message_handler(commands=["start"])
 def start(message):
 
     users_context[message.chat.id] = []
 
     bot.send_message(
         message.chat.id,
-        "👋 Добро пожаловать в AI бот\n\nЗадайте любой вопрос",
+        "Привет 👋\n\nНапиши вопрос или выбери функцию.",
         reply_markup=menu()
     )
 
 
 @bot.message_handler(func=lambda m: True)
-def chat(message):
+def handler(message):
 
     chat_id = message.chat.id
     text = message.text
@@ -48,37 +46,33 @@ def chat(message):
 
         bot.send_message(
             chat_id,
-            f"ID: {message.from_user.id}\nUsername: @{message.from_user.username}"
+            f"ID: {message.from_user.id}\n"
+            f"Username: @{message.from_user.username}"
         )
         return
 
 
-    if text == "💬 Удалить контекст":
+    if text == "💬 Очистить чат":
 
         users_context[chat_id] = []
         bot.send_message(chat_id,"Контекст очищен")
         return
 
 
-    if text == "🚀 Премиум":
-
-        bot.send_message(chat_id,"⭐ Премиум скоро будет доступен")
-        return
-
-
     if text == "🖼 Создать изображение":
 
+        image_mode[chat_id] = True
         bot.send_message(chat_id,"Напишите описание картинки")
         return
 
 
-    if text.startswith("/img"):
+    if image_mode.get(chat_id):
 
-        prompt = text.replace("/img","")
+        image_mode[chat_id] = False
 
         response = openai.images.generate(
             model="gpt-image-1",
-            prompt=prompt
+            prompt=text
         )
 
         image_url = response.data[0].url
@@ -91,9 +85,11 @@ def chat(message):
     if chat_id not in users_context:
         users_context[chat_id] = []
 
-    users_context[chat_id].append(
-        {"role":"user","content":text}
-    )
+
+    users_context[chat_id].append({
+        "role":"user",
+        "content":text
+    })
 
 
     response = openai.chat.completions.create(
@@ -107,9 +103,11 @@ def chat(message):
 
     answer = response.choices[0].message.content
 
-    users_context[chat_id].append(
-        {"role":"assistant","content":answer}
-    )
+
+    users_context[chat_id].append({
+        "role":"assistant",
+        "content":answer
+    })
 
 
     bot.send_message(chat_id,answer)
