@@ -1,44 +1,26 @@
 import telebot
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+import openai
 import os
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
-TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+OPENAI_KEY = os.getenv("OPENAI_KEY")
 
-bot = telebot.TeleBot(TOKEN)
+bot = telebot.TeleBot(BOT_TOKEN)
+openai.api_key = OPENAI_KEY
+
+users_context = {}
 
 
 def menu():
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
 
-    markup.add(
-        KeyboardButton("👋 Что умеет бот"),
-        KeyboardButton("👤 Мой профиль")
-    )
-
-    markup.add(
-        KeyboardButton("🚀 Премиум"),
-        KeyboardButton("💬 Удалить контекст")
-    )
-
-    markup.add(
-        KeyboardButton("🖼 Создать изображение"),
-        KeyboardButton("🎬 Создать видео")
-    )
-
-    markup.add(
-        KeyboardButton("🎸 Создать песню"),
-        KeyboardButton("🔎 Интернет-поиск")
-    )
-
-    markup.add(
-        KeyboardButton("📝 Выбрать модель"),
-        KeyboardButton("⚙️ Настройки бота")
-    )
-
-    markup.add(
-        KeyboardButton("🎱 Основные команды"),
-        KeyboardButton("📄 Соглашение")
-    )
+    markup.add("👋 Что умеет бот","👤 Мой профиль")
+    markup.add("🚀 Премиум","💬 Удалить контекст")
+    markup.add("🖼 Создать изображение","🎬 Создать видео")
+    markup.add("🎸 Создать песню","🔎 Интернет-поиск")
+    markup.add("📝 Выбрать модель","⚙️ Настройки бота")
+    markup.add("🎱 Основные команды","📄 Соглашение")
 
     return markup
 
@@ -46,56 +28,91 @@ def menu():
 @bot.message_handler(commands=['start'])
 def start(message):
 
+    users_context[message.chat.id] = []
+
     bot.send_message(
         message.chat.id,
-        "👋 Добро пожаловать!\n\nВыберите действие:",
+        "👋 Добро пожаловать в AI бот\n\nЗадайте любой вопрос",
         reply_markup=menu()
     )
 
 
 @bot.message_handler(func=lambda m: True)
-def handler(message):
+def chat(message):
 
+    chat_id = message.chat.id
     text = message.text
 
-    if text == "👋 Что умеет бот":
-        bot.send_message(message.chat.id,"Я умею отвечать на вопросы и генерировать контент.")
 
-    elif text == "👤 Мой профиль":
-        bot.send_message(message.chat.id,f"Ваш ID: {message.from_user.id}")
+    if text == "👤 Мой профиль":
 
-    elif text == "🚀 Премиум":
-        bot.send_message(message.chat.id,"⭐ Премиум скоро будет доступен.")
+        bot.send_message(
+            chat_id,
+            f"ID: {message.from_user.id}\nUsername: @{message.from_user.username}"
+        )
+        return
 
-    elif text == "💬 Удалить контекст":
-        bot.send_message(message.chat.id,"Контекст очищен.")
 
-    elif text == "🖼 Создать изображение":
-        bot.send_message(message.chat.id,"Напишите описание картинки.")
+    if text == "💬 Удалить контекст":
 
-    elif text == "🎬 Создать видео":
-        bot.send_message(message.chat.id,"Функция видео скоро появится.")
+        users_context[chat_id] = []
+        bot.send_message(chat_id,"Контекст очищен")
+        return
 
-    elif text == "🎸 Создать песню":
-        bot.send_message(message.chat.id,"Напишите текст песни.")
 
-    elif text == "🔎 Интернет-поиск":
-        bot.send_message(message.chat.id,"Напишите что нужно найти.")
+    if text == "🚀 Премиум":
 
-    elif text == "📝 Выбрать модель":
-        bot.send_message(message.chat.id,"Выберите модель AI.")
+        bot.send_message(chat_id,"⭐ Премиум скоро будет доступен")
+        return
 
-    elif text == "⚙️ Настройки бота":
-        bot.send_message(message.chat.id,"Настройки пока пустые.")
 
-    elif text == "🎱 Основные команды":
-        bot.send_message(message.chat.id,"/start /help /premium")
+    if text == "🖼 Создать изображение":
 
-    elif text == "📄 Соглашение":
-        bot.send_message(message.chat.id,"Пользовательское соглашение.")
+        bot.send_message(chat_id,"Напишите описание картинки")
+        return
 
-    else:
-        bot.send_message(message.chat.id,"Напишите вопрос.")
+
+    if text.startswith("/img"):
+
+        prompt = text.replace("/img","")
+
+        response = openai.images.generate(
+            model="gpt-image-1",
+            prompt=prompt
+        )
+
+        image_url = response.data[0].url
+
+        bot.send_photo(chat_id,image_url)
+
+        return
+
+
+    if chat_id not in users_context:
+        users_context[chat_id] = []
+
+    users_context[chat_id].append(
+        {"role":"user","content":text}
+    )
+
+
+    response = openai.chat.completions.create(
+
+        model="gpt-4o-mini",
+
+        messages=users_context[chat_id]
+
+    )
+
+
+    answer = response.choices[0].message.content
+
+    users_context[chat_id].append(
+        {"role":"assistant","content":answer}
+    )
+
+
+    bot.send_message(chat_id,answer)
 
 
 bot.infinity_polling()
